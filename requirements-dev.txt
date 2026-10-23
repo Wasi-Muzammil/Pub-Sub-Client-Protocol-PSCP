@@ -1,0 +1,4 @@
+# Runtime (broker + client) needs only the Python 3.8+ standard library.
+# These are for experiments/plot.py and optional pytest runs.
+matplotlib>=3.7
+pytest>=7

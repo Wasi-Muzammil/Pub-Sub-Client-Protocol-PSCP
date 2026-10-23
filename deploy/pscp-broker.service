@@ -1,0 +1,16 @@
+[Unit]
+Description=PSCP broker (CS-327 CEP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pscp
+WorkingDirectory=/opt/pscp
+ExecStart=/usr/bin/python3 -m pscp.broker --host 0.0.0.0 --port 5050
+Restart=on-failure
+RestartSec=2
+# stdout/stderr -> journald:  journalctl -u pscp-broker -f
+
+[Install]
+WantedBy=multi-user.target
