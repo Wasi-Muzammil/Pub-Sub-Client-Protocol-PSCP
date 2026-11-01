@@ -14,6 +14,13 @@ python -m pscp.client --host 127.0.0.1 --user bob         # terminal 3
 ```
 In the client, `/join room1`, then type to chat. `/help` lists the other commands. Add `--log-file alice.log` to record every protocol message.
 
+## Optional demo UI
+```bash
+pip install -r requirements-dev.txt
+streamlit run tools/streamlit_app.py      # browser chat over the same PSCP client
+```
+It is a demo skin only: the protocol code in `pscp/` needs no third-party package. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) §8.
+
 ## Tests
 ```bash
 python -m unittest discover -s tests -t .     # or: pytest
@@ -30,6 +37,7 @@ pscp/            protocol package (the only code deployed to the VM)
                  session (survives disconnects), registry (resume/takeover), rooms
   client/        api (PSCPClient), connection (back-off), cli (chat UI)
 experiments/     measure.py -> results/raw/*.csv, plot.py -> report/figures, bytes_compare.py
+tools/           streamlit_app.py (optional browser demo UI)
 tests/           unit + in-process integration tests
 deploy/          setup_vm.sh, systemd unit, tcpdump capture script
 docs/            PROTOCOL.md, DEPLOYMENT.md, handoff.md
