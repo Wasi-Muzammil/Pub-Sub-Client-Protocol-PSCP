@@ -17,7 +17,7 @@ In the client, `/join room1`, then type to chat. `/help` lists the other command
 ## Optional demo UI
 ```bash
 pip install -r requirements-dev.txt
-streamlit run tools/streamlit_app.py      # browser chat over the same PSCP client
+python -m streamlit run tools/streamlit_app.py      # browser chat over the same PSCP client
 ```
 It is a demo skin only: the protocol code in `pscp/` needs no third-party package. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) §8.
 

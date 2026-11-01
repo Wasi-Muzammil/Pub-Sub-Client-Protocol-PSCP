@@ -71,8 +71,10 @@ Save the logs to `results/logs/`.
 
 ```bash
 pip install -r requirements-dev.txt          # streamlit==1.66.1
-streamlit run tools/streamlit_app.py         # browser opens on http://localhost:8501
+python -m streamlit run tools/streamlit_app.py   # browser opens on http://localhost:8501
 ```
+
+Use `python -m streamlit`, not bare `streamlit`: on Windows the Store version of Python installs `streamlit.exe` into a `LocalCache\...\Scripts` folder that is not on `PATH`.
 
 - Sidebar: broker host/port, username, Connect/Disconnect, room join/leave, QoS 0/1, Ping (RTT). Main area: chat history, online users, protocol log.
 - With three hosts: Host 1 runs the broker, Laptop A runs Streamlit (browser on the same laptop, port 8501 stays local), Laptop B runs `python -m pscp.client`. Both are clients, so only the broker needs TCP 5050 open.
