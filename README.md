@@ -2,6 +2,7 @@
 
 CS-327 CEP (Option D): a multi-client chat with presence, built on our own MQTT-style protocol over raw TCP sockets. Python 3.8+, standard library only.
 
+- Simple explanation: [docs/PSCP_IN_SIMPLE_WORDS.md](docs/PSCP_IN_SIMPLE_WORDS.md)
 - Protocol spec: [docs/PROTOCOL.md](docs/PROTOCOL.md)
 - Cloud deployment, evidence and experiments: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - Project status and decisions: [docs/handoff.md](docs/handoff.md)
@@ -16,10 +17,9 @@ In the client, `/join room1`, then type to chat. `/help` lists the other command
 
 ## Optional demo UI
 ```bash
-pip install -r requirements-dev.txt
-python -m streamlit run tools/streamlit_app.py      # browser chat over the same PSCP client
+python tools/webui.py                               # http://127.0.0.1:8080
 ```
-It is a demo skin only: the protocol code in `pscp/` needs no third-party package. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) §8.
+WhatsApp-style browser chat: rooms on the left, messages on the right. `tools/webui.py` is a standard-library bridge that holds a normal PSCP client and serves `tools/web/index.html`; the page polls it once per second. Room previews and history come from the broker's SQLite mirror (`data/broker.db`). No extra package to install. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) §8.
 
 ## Tests
 ```bash
@@ -32,12 +32,13 @@ pscp/            protocol package (the only code deployed to the VM)
   constants.py   message types, status codes, flags, timers
   wire.py        encode/decode, recv_exact, payload formats
   reliability.py Outbox (QoS 1 retransmit) + DedupWindow, shared by broker and client
+  store.py       SQLite mirror of rooms, users, memberships and messages
   log.py         common log format
   broker/        server (accept + timers), connection (reader/writer threads),
                  session (survives disconnects), registry (resume/takeover), rooms
   client/        api (PSCPClient), connection (back-off), cli (chat UI)
 experiments/     measure.py -> results/raw/*.csv, plot.py -> report/figures, bytes_compare.py
-tools/           streamlit_app.py (optional browser demo UI)
+tools/           webui.py + web/index.html (optional browser demo UI)
 tests/           unit + in-process integration tests
 deploy/          setup_vm.sh, systemd unit, tcpdump capture script
 docs/            PROTOCOL.md, DEPLOYMENT.md, handoff.md

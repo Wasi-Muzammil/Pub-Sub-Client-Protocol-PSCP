@@ -1,6 +1,7 @@
 """Broker: listening socket, accept loop, housekeeping timers, presence."""
 import os
 import socket
+import sqlite3
 import threading
 import time
 
@@ -8,6 +9,7 @@ from ..constants import (
     DEFAULT_PORT, KEEPALIVE, PRESENCE_TOPIC, SESSION_EXPIRY, TICK, TIMEOUT_FACTOR, MsgType, Presence,
 )
 from ..log import setup
+from ..store import Store
 from ..wire import encode_presence
 from .connection import Connection
 from .registry import Registry
@@ -17,17 +19,27 @@ from .rooms import Rooms
 class Broker:
     def __init__(self, host="0.0.0.0", port=DEFAULT_PORT, max_clients=100, drop_ack=0.0,
                  keepalive=KEEPALIVE, timeout_factor=TIMEOUT_FACTOR, session_expiry=SESSION_EXPIRY,
-                 logger=None):
+                 logger=None, db=None):
         self.host = host
         self.port = port
         self.drop_ack = drop_ack
         self.keepalive = keepalive
         self.timeout_factor = timeout_factor
         self.log = logger or setup("broker")
-        self.rooms = Rooms()
+        self.store = Store(db) if db else None
+        self.rooms = Rooms(self.store.sequences() if self.store else None)
         self.registry = Registry(self.rooms, max_clients, session_expiry)
         self._stop = threading.Event()
         self._listener = None
+
+    def record(self, method, *args):
+        """Write to SQLite without ever putting storage on the message path."""
+        if self.store is None:
+            return
+        try:
+            getattr(self.store, method)(*args)
+        except sqlite3.Error:
+            self.log.exception("DB %s failed", method)
 
     # ---- lifecycle -----------------------------------------------------
 
@@ -56,6 +68,8 @@ class Broker:
         for s in self.registry.live_sessions():
             if s.conn:
                 s.conn.drop("broker shutting down")
+        if self.store is not None:
+            self.store.close()
         self.log.info("STOP")
 
     def _accept_loop(self):
@@ -89,6 +103,7 @@ class Broker:
                     s.queue_resends(resend)
             for s in self.registry.expire(now):
                 self.log.info("EXPIRE session %s discarded (%d unacked lost)", s.username, len(s.outbox))
+                self.record("drop_memberships", s.username)
 
     def connection_ended(self, conn, clean, reason):
         self.log.info("CLOSE %s (%s)", conn.name, reason)
@@ -97,6 +112,7 @@ class Broker:
             return
         if clean:
             if self.registry.discard(s, conn):
+                self.record("drop_memberships", s.username)
                 self.presence(Presence.LEAVE, s.username)
         elif self.registry.detach(s, conn):
             self.log.info("SESSION %s retained for %gs (%d unacked, %d queued)",
@@ -111,6 +127,7 @@ class Broker:
             conn = s.conn
             if self.registry.discard(s):
                 self.log.info("OVERFLOW %s queue full: session dropped", s.username)
+                self.record("drop_memberships", s.username)
                 if conn:
                     conn.drop("outbound queue overflow")
                 self.presence(Presence.TIMEOUT, s.username)

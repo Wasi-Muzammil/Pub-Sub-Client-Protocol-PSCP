@@ -3,7 +3,8 @@ import unittest
 
 from pscp.constants import FLAG_DUP, FLAG_QOS, MsgType, Status
 from pscp.wire import (
-    Message, ProtocolError, decode, decode_delivery, encode, encode_delivery, read_message,
+    Message, ProtocolError, decode, decode_delivery, decode_room_list, encode, encode_delivery,
+    encode_room_list, read_message,
 )
 
 WORKED_EXAMPLE = bytes.fromhex("01 07 01 05 00 01 00 02 72 6F 6F 6D 31 48 69")
@@ -46,6 +47,11 @@ class WireTest(unittest.TestCase):
 
     def test_delivery_payload(self):
         self.assertEqual(decode_delivery(encode_delivery("alice", b"Hi")), ("alice", b"Hi"))
+
+    def test_room_list_round_trip(self):
+        rooms = [("room1", 3), ("café", 0), ("room2", 65535)]
+        self.assertEqual(decode_room_list(encode_room_list(rooms)), rooms)
+        self.assertEqual(decode_room_list(encode_room_list([])), [])
 
 
 if __name__ == "__main__":

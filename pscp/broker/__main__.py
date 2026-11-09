@@ -18,10 +18,13 @@ def main():
                    help="fault injection: probability of dropping each outgoing PUBACK")
     p.add_argument("--log-level", default="INFO")
     p.add_argument("--log-file")
+    p.add_argument("--db", default="data/broker.db",
+                   help="SQLite mirror of rooms, users and messages ('' to disable)")
     a = p.parse_args()
 
     broker = Broker(a.host, a.port, a.max_clients, a.drop_ack, a.keepalive,
-                    session_expiry=a.session_expiry, logger=setup("broker", a.log_level, a.log_file))
+                    session_expiry=a.session_expiry, logger=setup("broker", a.log_level, a.log_file),
+                    db=a.db or None)
     broker.start()
     signal.signal(signal.SIGTERM, lambda *_: broker.stop())  # systemctl stop
     try:

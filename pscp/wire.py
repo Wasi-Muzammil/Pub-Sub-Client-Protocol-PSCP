@@ -182,6 +182,33 @@ def decode_presence(payload):
     return Presence(payload[0]), payload[1:].decode("utf-8", "replace")
 
 
+def encode_room_list(rooms):
+    """ROOMSACK body: count(2) | [name_len(1) | name | members(2)]*."""
+    out = struct.pack("!H", min(len(rooms), 0xFFFF))
+    for name, members in rooms[:0xFFFF]:
+        data = name.encode("utf-8")[:MAX_TOPIC_LEN]
+        out += bytes([len(data)]) + data + struct.pack("!H", min(members, 0xFFFF))
+    return out
+
+
+def decode_room_list(payload):
+    if len(payload) < 2:
+        raise ProtocolError(Status.MALFORMED, "short room list")
+    (count,) = struct.unpack("!H", payload[:2])
+    out, off = [], 2
+    for _ in range(count):
+        if off >= len(payload):
+            raise ProtocolError(Status.MALFORMED, "short room list")
+        size = payload[off]
+        if off + 1 + size + 2 > len(payload):
+            raise ProtocolError(Status.MALFORMED, "short room entry")
+        name = payload[off + 1:off + 1 + size].decode("utf-8", "replace")
+        (members,) = struct.unpack("!H", payload[off + 1 + size:off + 3 + size])
+        out.append((name, members))
+        off += 3 + size
+    return out
+
+
 def valid_room(topic):
     """Rooms users may publish to: 1-255 bytes and not starting with '$' (reserved)."""
     return bool(topic) and not topic.startswith("$")

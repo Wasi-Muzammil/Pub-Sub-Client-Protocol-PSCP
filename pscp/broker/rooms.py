@@ -23,15 +23,19 @@ class Room:
 
 
 class Rooms:
-    def __init__(self):
+    def __init__(self, sequences=None):
         self._lock = threading.Lock()
         self._rooms = {}
+        # Persisted counters: seeding them avoids reusing a sequence number that
+        # the message log already contains after a broker restart.
+        self._sequences = dict(sequences or {})
 
     def _room(self, name):
         with self._lock:
             room = self._rooms.get(name)
             if room is None:
                 room = self._rooms[name] = Room(name)
+                room.last_seq = self._sequences.get(name, 0)
             return room
 
     def subscribe(self, session, topic, qos):
@@ -50,6 +54,16 @@ class Rooms:
     def remove_session(self, session):
         for topic in list(session.subscriptions):
             self.unsubscribe(session, topic)
+
+    def snapshot(self):
+        """[(room, subscriber_count)] for the room directory, sorted by name."""
+        with self._lock:
+            rooms = list(self._rooms.values())
+        out = []
+        for room in rooms:
+            with room.lock:
+                out.append((room.name, len(room.subscribers)))
+        return sorted(out)
 
     def publish(self, topic, payload, qos, msg_type=MsgType.PUBLISH):
         """Fan out to every subscriber with QoS = min(publish QoS, subscription QoS).

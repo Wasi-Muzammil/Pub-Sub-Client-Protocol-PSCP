@@ -50,8 +50,12 @@ All integers are big-endian and all text is UTF-8. The fixed header is 8 bytes (
 | `0x0B` | PRESENCE | B→C | `$presence` | sequence number (0 for a snapshot entry) | Event (1 B), username |
 | `0x0C` | DISCONNECT | C→B | empty | 0 | empty |
 | `0x0D` | ERROR | B→C | optional | optional | Status |
+| `0x0E` | ROOMS | C→B | empty | client ID | empty: ask for the room directory |
+| `0x0F` | ROOMSACK | B→C | empty | echoed | Status, then Count (2 B), then per room: NameLen (1 B), Name, Members (2 B) |
 
 PUBACK carries the room name in **both** directions. A sequence number is unique only within its room, so the pair (room, sequence number) is needed to identify the message being acknowledged.
+
+With `--db` the broker persists each room's last sequence number and continues from it after a restart, so `(room, sequence number)` stays unique across restarts. Without a database the counters start again at 1.
 
 **Presence events:** `0x01` JOIN, `0x02` LEAVE (the user sent DISCONNECT), `0x03` TIMEOUT (the connection was lost without DISCONNECT: keep-alive expired, TCP reset, or retransmissions exhausted).
 
@@ -79,6 +83,7 @@ PUBACK carries the room name in **both** directions. A sequence number is unique
    - Otherwise, any old retained session is discarded and a new session is created → CONNACK OK with SESSION = 0.
    - The broker publishes PRESENCE JOIN, except on a takeover of a live connection.
 3. **SUBSCRIBE(room, QoS)**: the client is added to the room with the QoS it requested → SUBACK. Subscribing to `$presence` additionally queues one QoS 0 PRESENCE JOIN (ID 0) for each user currently online.
+   **ROOMS**: the broker answers ROOMSACK with every room it currently knows and the number of subscribers in each. A room exists from its first SUBSCRIBE until the last session in it is discarded. `$presence` appears in the list; clients ignore it.
 4. **PUBLISH from a client**
    - The room is invalid → status INVALID_TOPIC. The client has not joined the room → status NOT_SUBSCRIBED.
    - Otherwise, if QoS = 1 and the Message ID is in the sender's duplicate window, the message is **not forwarded**. If not, it is forwarded: under the room's lock the broker assigns the next sequence number and queues a copy for every subscriber. The copy's QoS is **min(publish QoS, subscription QoS)**.
@@ -96,7 +101,7 @@ PUBACK carries the room name in **both** directions. A sequence number is unique
 | Duplicate window | The last **256** IDs: per session at the broker (client Message IDs), and per room at the client (sequence numbers). IDs drop out of the window long before a 16-bit ID wraps round. |
 | Flow control | At most **32** unacknowledged deliveries per subscriber. Further messages wait in a queue of at most **1,000**. If that queue overflows, the session is discarded and PRESENCE TIMEOUT is published. |
 | Session retention | After a connection is lost without DISCONNECT, the session (subscriptions, outbox, duplicate window, queued QoS 1 messages) is kept for **120 s**. QoS 0 messages are not stored for an offline client. |
-| Client resume | The client reconnects with back-off (immediately, then after 1, 2, 4, 8 and 16 s) and sets RESUME. On CONNACK with SESSION = 1 it replays its own unacknowledged publishes with DUP = 1. On SESSION = 0 it clears its duplicate windows (the broker may have restarted, so sequence numbers may have reset), subscribes to its rooms again, and then replays. |
+| Client resume | The client reconnects with back-off (immediately, then after 1, 2, 4, 8 and 16 s) and sets RESUME. On CONNACK with SESSION = 1 it replays its own unacknowledged publishes with DUP = 1. On SESSION = 0 it clears its duplicate windows (the broker may have restarted without `--db`, so sequence numbers may have reset), subscribes to its rooms again, and then replays. |
 | Meaning of PUBACK | "The next hop has taken responsibility for the message." It does **not** mean the other user has read it. |
 
 ## 7. Timers
@@ -125,4 +130,5 @@ PUBACK carries the room name in **both** directions. A sequence number is unique
 | Presence (JOIN/LEAVE/TIMEOUT) is built in, with a snapshot on subscribe | No presence; Last Will is the nearest equivalent |
 | A single RESUME bit, with a fixed 120 s expiry | Clean Session flag; expiry set by the broker |
 | PUBACK carries the topic and a status code | PUBACK carries only the packet ID |
+| ROOMS/ROOMSACK gives every client the room list with member counts | Discovery is out of scope |
 | No QoS 2, no wildcards, no retained messages | Supports all three |

@@ -26,6 +26,8 @@ class MsgType(IntEnum):
     PRESENCE = 0x0B
     DISCONNECT = 0x0C
     ERROR = 0x0D
+    ROOMS = 0x0E       # client asks for the room directory
+    ROOMSACK = 0x0F    # broker replies with room names and member counts
 
 
 class Status(IntEnum):

@@ -13,7 +13,7 @@ import time
 from ..constants import FLAG_QOS, FLAG_SESSION, PRESENCE_TOPIC, MsgType, Presence, Status
 from ..wire import (
     ConnectionClosed, Message, ProtocolError, decode_username, encode, encode_delivery,
-    encode_presence, read_message, status_payload, valid_room,
+    encode_presence, encode_room_list, read_message, status_payload, valid_room,
 )
 
 
@@ -110,6 +110,7 @@ class Connection:
             return False
         self.session = session
         self.name = f"{username}@{self.name}"
+        self.broker.record("touch_user", username)
         if replaced is not None:
             replaced.drop("taken over by a resumed connection")
         self._reply(MsgType.CONNACK, flags=FLAG_SESSION if present else 0)
@@ -132,8 +133,13 @@ class Connection:
             self._on_subscribe(msg)
         elif t == MsgType.UNSUBSCRIBE:
             found = self.broker.rooms.unsubscribe(self.session, msg.topic)
+            if valid_room(msg.topic):
+                self.broker.record("set_membership", msg.topic, self.session.username, False)
             self._reply(MsgType.UNSUBACK, msg.msg_id, msg.topic,
                         Status.OK if found else Status.NOT_SUBSCRIBED)
+        elif t == MsgType.ROOMS:
+            self.send(Message(MsgType.ROOMSACK, 0, msg.msg_id, "",
+                              status_payload(Status.OK) + encode_room_list(self.broker.rooms.snapshot())))
         elif t == MsgType.PING:
             self.send(Message(MsgType.PONG))
         else:
@@ -146,6 +152,8 @@ class Connection:
             return
         self.broker.rooms.subscribe(self.session, topic, msg.qos)
         self._reply(MsgType.SUBACK, msg.msg_id, topic, flags=msg.qos & FLAG_QOS)
+        if valid_room(topic):
+            self.broker.record("set_membership", topic, self.session.username, True)
         if topic == PRESENCE_TOPIC:
             # snapshot of who is online, as QoS 0 JOIN events without a sequence number
             for s in self.broker.registry.live_sessions():
@@ -164,6 +172,8 @@ class Connection:
                 self.log.info("DUP  %s id=%d already accepted: re-ack, not forwarded", self.name, msg.msg_id)
             else:
                 seq = self.broker.fanout(msg.topic, encode_delivery(session.username, msg.payload), msg.qos)
+                self.broker.record("save_message", msg.topic, seq, session.username,
+                                   msg.payload.decode("utf-8", "replace"), msg.qos)
                 self.log.debug("FWD  %s id=%d -> %s seq=%d", self.name, msg.msg_id, msg.topic, seq)
         if msg.qos:
             if self.broker.drop_ack and random.random() < self.broker.drop_ack:

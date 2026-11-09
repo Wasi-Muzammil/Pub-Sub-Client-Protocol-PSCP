@@ -3,6 +3,10 @@ __pycache__/
 .venv/
 venv/
 *.log
+data/
+*.db
+*.db-wal
+*.db-shm
 report/*.aux
 report/*.out
 report/*.toc

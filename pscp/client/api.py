@@ -17,8 +17,8 @@ from ..constants import (
 from ..log import setup
 from ..reliability import DedupWindow, Outbox
 from ..wire import (
-    ConnectionClosed, Message, ProtocolError, decode_delivery, decode_presence, encode,
-    encode_username, read_message, status_payload,
+    ConnectionClosed, Message, ProtocolError, decode_delivery, decode_presence, decode_room_list,
+    encode, encode_username, read_message, status_payload,
 )
 from .connection import open_with_backoff
 
@@ -84,6 +84,11 @@ class PSCPClient:
         reply = self._request(Message(MsgType.UNSUBSCRIBE, 0, self._alloc_id(), room), timeout)
         self.subscriptions.pop(room, None)
         return reply.status()
+
+    def list_rooms(self, timeout=10.0):
+        """[(room, subscriber_count)] as the broker knows them right now."""
+        reply = self._request(Message(MsgType.ROOMS, 0, self._alloc_id()), timeout)
+        return decode_room_list(reply.payload[1:]) if reply.status() == Status.OK else []
 
     def publish(self, room, text, qos=None, wait=False, timeout=10.0):
         """QoS 1: kept in the outbox until PUBACK, even across reconnects.
@@ -261,7 +266,7 @@ class PSCPClient:
             if msg.status() != Status.OK:
                 self.on_status(f"publish to {msg.topic} rejected: {msg.status().name}")
             self._resolve(msg)
-        elif t in (MsgType.SUBACK, MsgType.UNSUBACK):
+        elif t in (MsgType.SUBACK, MsgType.UNSUBACK, MsgType.ROOMSACK):
             self._resolve(msg)
         elif t == MsgType.PONG:
             self._pong.set()

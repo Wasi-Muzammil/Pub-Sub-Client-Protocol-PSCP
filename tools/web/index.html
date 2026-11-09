@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PSCP chat</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { height: 100%; }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body class="h-full bg-neutral-50 text-neutral-900 antialiased">
+
+<!-- connect -->
+<div id="connect-view" class="grid h-full place-items-center p-6">
+  <form id="connect-form" class="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
+    <h1 class="text-xl font-semibold tracking-tight">PSCP chat</h1>
+    <p class="mt-1 text-sm text-neutral-500">Publish/subscribe chat over raw TCP.</p>
+    <p id="connect-error" class="mt-4 hidden rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+
+    <label for="user" class="mt-6 block text-xs font-medium text-neutral-500">Username</label>
+    <input id="user" required maxlength="32" autocomplete="off"
+           class="mt-1 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none focus:border-neutral-400 focus:bg-white">
+
+    <div class="mt-4 flex gap-3">
+      <div class="flex-1">
+        <label for="host" class="block text-xs font-medium text-neutral-500">Broker</label>
+        <input id="host" value="127.0.0.1" autocomplete="off"
+               class="mt-1 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none focus:border-neutral-400 focus:bg-white">
+      </div>
+      <div class="w-24">
+        <label for="port" class="block text-xs font-medium text-neutral-500">Port</label>
+        <input id="port" type="number" min="1" max="65535" value="5050"
+               class="mt-1 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm outline-none focus:border-neutral-400 focus:bg-white">
+      </div>
+    </div>
+
+    <button id="connect-btn" class="mt-6 w-full rounded-lg bg-[#1f6f5c] py-2.5 text-sm font-medium text-white hover:bg-[#18594a] disabled:opacity-60">
+      Connect
+    </button>
+    <p class="mt-4 text-xs text-neutral-400">The broker must be running: python -m pscp.broker</p>
+  </form>
+</div>
+
+<!-- chat -->
+<div id="app-view" class="hidden h-full">
+  <div class="flex h-full">
+
+    <aside class="flex w-[340px] shrink-0 flex-col border-r border-neutral-200 bg-white">
+      <header class="flex items-center gap-3 border-b border-neutral-200 px-4 py-3">
+        <div id="avatar" class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-neutral-200 text-sm font-semibold text-neutral-600"></div>
+        <div class="min-w-0 flex-1">
+          <div id="me" class="truncate text-sm font-medium"></div>
+          <div id="state" class="truncate text-xs text-neutral-500">connecting</div>
+        </div>
+        <button id="quit" class="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900">Leave</button>
+      </header>
+
+      <div id="rooms" class="flex-1 overflow-y-auto"></div>
+
+      <div id="settings" class="hidden border-t border-neutral-200 px-4 py-3">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-medium text-neutral-500">Broker</span>
+          <span id="settings-host" class="truncate text-xs text-neutral-700"></span>
+        </div>
+        <button id="ping-btn" class="mt-3 w-full rounded-lg border border-neutral-200 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-60">
+          Test RTT
+        </button>
+        <p id="rtt" class="mt-2 text-xs text-neutral-400">not measured</p>
+      </div>
+
+      <form id="new-room" class="flex items-center gap-2 border-t border-neutral-200 p-3">
+        <button type="button" id="settings-btn" aria-label="Settings"
+                class="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"></path>
+          </svg>
+        </button>
+        <input id="room-name" placeholder="New room" autocomplete="off"
+               class="min-w-0 flex-1 rounded-lg bg-neutral-100 px-3 py-2 text-sm outline-none placeholder:text-neutral-400 focus:bg-white focus:ring-2 focus:ring-neutral-200">
+      </form>
+    </aside>
+
+    <main class="flex min-w-0 flex-1 flex-col">
+      <header class="flex h-14 shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-5">
+        <span id="title" class="truncate text-sm font-semibold">Select a room</span>
+        <span id="presence" class="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-[#1f6f5c]"></span>
+        <span id="note" class="ml-auto truncate text-xs text-neutral-400"></span>
+      </header>
+
+      <div id="log" class="flex-1 space-y-2 overflow-y-auto bg-[#faf9f7] px-5 py-4">
+        <p class="mt-10 text-center text-sm text-neutral-400">Select a room to start chatting.</p>
+      </div>
+
+      <form id="send-form" class="flex shrink-0 items-center gap-2 border-t border-neutral-200 bg-white px-4 py-3">
+        <input id="text" autocomplete="off" placeholder="Message" disabled
+               class="min-w-0 flex-1 rounded-full bg-neutral-100 px-4 py-2.5 text-sm outline-none placeholder:text-neutral-400 focus:bg-neutral-200/60 disabled:opacity-60">
+        <button id="send-btn" disabled aria-label="Send"
+                class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#1f6f5c] text-white hover:bg-[#18594a] disabled:opacity-40">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+            <path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12 2-12 2z"></path>
+          </svg>
+        </button>
+      </form>
+    </main>
+
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (value) => String(value).replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
+const app = {
+  user: '', host: '127.0.0.1', port: 5050, room: '', init: true,
+  seen: {}, unread: new Set(), key: '', scrollRoom: '', roomsKey: '', timer: null,
+};
+
+const clock = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+const day = (ts) => ts ? new Date(ts * 1000).toLocaleDateString([], { day: '2-digit', month: 'short' }) : '';
+const today = (ts) => ts && new Date(ts * 1000).toDateString() === new Date().toDateString();
+
+async function api(payload) {
+  const response = await fetch('/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return response.json();
+}
+
+// ---- connect ---------------------------------------------------------------
+
+const saved = JSON.parse(sessionStorage.getItem('pscp') || '{}');
+app.room = sessionStorage.getItem('pscp-room') || '';
+$('user').value = saved.user || 'web-' + Math.random().toString(16).slice(2, 6);
+$('host').value = saved.host || '127.0.0.1';
+$('port').value = saved.port || 5050;
+
+$('connect-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  doConnect();
+});
+
+async function doConnect() {
+  const button = $('connect-btn');
+  $('connect-error').classList.add('hidden');
+  button.disabled = true;
+  button.textContent = 'Connecting...';
+
+  app.user = $('user').value.trim();
+  app.host = $('host').value.trim();
+  app.port = Number($('port').value);
+  sessionStorage.setItem('pscp', JSON.stringify({ user: app.user, host: app.host, port: app.port }));
+
+  try {
+    const data = await api({ action: 'state', user: app.user, host: app.host, port: app.port, room: app.room });
+    if (!data.ok) throw new Error(data.error);
+    enter();
+    if (app.room) selectRoomUI(app.room);
+    render(data);
+    start();
+  } catch (error) {
+    $('connect-error').textContent = error.message;
+    $('connect-error').classList.remove('hidden');
+    button.disabled = false;
+    button.textContent = 'Connect';
+  }
+}
+
+function enter() {
+  $('connect-view').classList.add('hidden');
+  $('app-view').classList.remove('hidden');
+  $('me').textContent = app.user;
+  $('avatar').textContent = app.user.slice(0, 2).toUpperCase();
+}
+
+function leaveView(message) {
+  clearInterval(app.timer);
+  app.timer = null;
+  app.key = '';
+  app.scrollRoom = '';
+  app.roomsKey = '';
+  app.seen = {};
+  app.unread.clear();
+  app.init = true;
+  $('title').textContent = 'Select a room';
+  $('settings').classList.add('hidden');
+  $('rtt').textContent = 'not measured';
+  $('text').disabled = true;
+  $('send-btn').disabled = true;
+  $('app-view').classList.add('hidden');
+  $('connect-view').classList.remove('hidden');
+  $('connect-btn').disabled = false;
+  $('connect-btn').textContent = 'Connect';
+  $('connect-error').textContent = message || '';
+  $('connect-error').classList.toggle('hidden', !message);
+}
+
+// ---- polling ---------------------------------------------------------------
+
+function start() {
+  clearInterval(app.timer);
+  app.timer = setInterval(tick, 1000);
+  tick();
+}
+
+async function tick() {
+  try {
+    const data = await api({ action: 'state', user: app.user, host: app.host, port: app.port, room: app.room });
+    if (!data.ok) throw new Error(data.error);
+    render(data);
+  } catch (error) {
+    leaveView(error.message);
+  }
+}
+
+function render(data) {
+  $('state').textContent = data.status === 'live'
+    ? (data.online ? 'connected - others online' : 'connected')
+    : data.status;
+  $('state').className = 'truncate text-xs ' + (data.status === 'live' ? 'text-neutral-500' : 'text-amber-600');
+  $('presence').classList.toggle('hidden', !(data.online && app.room));
+
+  const rooms = data.rooms || [];
+  if (app.init) {
+    for (const room of rooms) app.seen[room.name] = room.last_seq;
+    app.init = false;
+  }
+  for (const room of rooms) {
+    if (room.name !== app.room && room.last_seq > (app.seen[room.name] || 0)) {
+      app.unread.add(room.name);
+    }
+  }
+  renderRooms(rooms);
+  if (app.room) renderMessages(data.messages || []);
+}
+
+// ---- rooms -----------------------------------------------------------------
+
+function renderRooms(rooms) {
+  const key = JSON.stringify(rooms) + app.room + [...app.unread].sort().join(',');
+  if (key === app.roomsKey) return;
+  app.roomsKey = key;
+
+  const box = $('rooms');
+  box.textContent = '';
+  if (!rooms.length) {
+    const empty = document.createElement('p');
+    empty.className = 'px-4 py-6 text-sm text-neutral-400';
+    empty.textContent = 'No rooms yet. Create one below.';
+    box.appendChild(empty);
+    return;
+  }
+
+  for (const room of rooms) {
+    const active = room.name === app.room;
+    const unread = !active && app.unread.has(room.name);
+    const row = document.createElement('button');
+    row.className = 'flex w-full items-center gap-3 border-b border-neutral-100 px-4 py-3 text-left '
+      + (active ? 'bg-neutral-100' : 'hover:bg-neutral-50');
+    row.innerHTML = `
+      <div class="min-w-0 flex-1">
+        <div class="flex items-baseline gap-2">
+          <span class="truncate text-sm ${unread ? 'font-semibold' : 'font-medium'}">${esc(room.name)}</span>
+          <span class="ml-auto shrink-0 text-[11px] text-neutral-400">${today(room.last_ts) ? clock(room.last_ts) : day(room.last_ts)}</span>
+        </div>
+        <div class="mt-0.5 flex items-center gap-2">
+          <span class="min-w-0 truncate text-xs ${unread ? 'text-neutral-700' : 'text-neutral-400'}">${esc(room.last_text || 'No messages yet')}</span>
+          ${unread ? '<span class="ml-auto h-2 w-2 shrink-0 rounded-full bg-[#1f6f5c]"></span>' : ''}
+        </div>
+      </div>`;
+    row.addEventListener('click', () => openRoom(room.name));
+    box.appendChild(row);
+  }
+}
+
+function openRoom(name) {
+  selectRoomUI(name);
+  sessionStorage.setItem('pscp-room', name);
+  tick();
+}
+
+function selectRoomUI(name) {
+  app.room = name;
+  app.key = '';
+  app.scrollRoom = '';
+  app.roomsKey = '';
+  app.unread.delete(name);
+  app.seen[name] = app.seen[name] || 0;
+
+  $('title').textContent = name;
+  $('text').disabled = false;
+  $('send-btn').disabled = false;
+  $('text').placeholder = 'Message ' + name;
+  $('text').focus();
+  $('log').textContent = '';
+}
+
+// ---- messages --------------------------------------------------------------
+
+function renderMessages(messages) {
+  const last = messages.length ? messages[messages.length - 1].seq : 0;
+  const key = app.room + '|' + messages.length + '|' + last;
+  if (key === app.key) return;
+
+  const log = $('log');
+  const firstPaint = app.scrollRoom !== app.room;
+  const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+  app.key = key;
+  log.textContent = '';
+
+  if (!messages.length) {
+    const empty = document.createElement('p');
+    empty.className = 'mt-10 text-center text-sm text-neutral-400';
+    empty.textContent = 'No messages yet. Say hello.';
+    log.appendChild(empty);
+  }
+
+  for (const message of messages) {
+    const mine = message.sender === app.user;
+    const row = document.createElement('div');
+    row.className = 'flex ' + (mine ? 'justify-end' : 'justify-start');
+    row.innerHTML = `
+      <div class="max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm ${mine
+        ? 'bg-[#1f6f5c] text-white'
+        : 'border border-neutral-200 bg-white text-neutral-900'}">
+        ${mine ? '' : `<div class="mb-0.5 text-[11px] font-medium text-neutral-500">${esc(message.sender)}</div>`}
+        <div class="whitespace-pre-wrap break-words">${esc(message.text)}</div>
+        <div class="mt-1 text-right text-[10px] ${mine ? 'text-white/60' : 'text-neutral-400'}">${clock(message.ts)}</div>
+      </div>`;
+    log.appendChild(row);
+  }
+
+  app.scrollRoom = app.room;
+  if (nearBottom || firstPaint) log.scrollTop = log.scrollHeight;
+  app.seen[app.room] = Math.max(app.seen[app.room] || 0, last);
+  if (app.unread.delete(app.room)) app.roomsKey = '';
+}
+
+// ---- actions ---------------------------------------------------------------
+
+$('send-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = $('text');
+  const text = input.value.trim();
+  if (!text || !app.room) return;
+  input.value = '';
+  try {
+    const data = await api({ action: 'send', user: app.user, room: app.room, text });
+    if (!data.ok) throw new Error(data.error);
+    tick();
+  } catch (error) {
+    $('note').textContent = error.message;
+    setTimeout(() => { $('note').textContent = ''; }, 4000);
+  }
+});
+
+$('new-room').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const input = $('room-name');
+  const name = input.value.trim();
+  if (!name) return;
+  input.value = '';
+  openRoom(name);
+});
+
+$('settings-btn').addEventListener('click', () => {
+  $('settings').classList.toggle('hidden');
+  $('settings-host').textContent = app.host + ':' + app.port;
+});
+
+$('ping-btn').addEventListener('click', async () => {
+  const button = $('ping-btn');
+  const label = $('rtt');
+  button.disabled = true;
+  label.textContent = 'testing...';
+  label.className = 'mt-2 text-xs text-neutral-400';
+  try {
+    const data = await api({ action: 'ping', user: app.user, host: app.host, port: app.port });
+    if (!data.ok) throw new Error(data.error);
+    label.textContent = 'RTT ' + (data.rtt * 1000).toFixed(1) + ' ms';
+    label.className = 'mt-2 text-xs text-neutral-500';
+  } catch (error) {
+    label.textContent = error.message;
+    label.className = 'mt-2 text-xs text-red-600';
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('quit').addEventListener('click', async () => {
+  clearInterval(app.timer);
+  app.timer = null;
+  try { await api({ action: 'disconnect', user: app.user }); } catch (error) { /* already gone */ }
+  sessionStorage.removeItem('pscp');
+  sessionStorage.removeItem('pscp-room');
+  app.user = '';
+  app.room = '';
+  leaveView('');
+});
+
+if (saved.user) doConnect();
+</script>
+</body>
+</html>

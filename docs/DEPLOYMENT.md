@@ -65,20 +65,20 @@ Save the logs to `results/logs/`.
 | 3. Lost acknowledgements | Run the broker and/or client with `--drop-ack 0.3`. | `FAULT dropped PUBACK`, `RETX … DUP=1` and `DUP … re-ack, not forwarded` in the logs, with each message shown once. |
 | 4. Link loss and resume | Turn off a laptop's Wi-Fi for about 20 s while another client sends messages. A hotspot reconnect that changes the laptop's IP reliably breaks the TCP connection. | The client log shows `LOST` and `CONNACK OK session_present=1`. The broker shows `taken over` or `SESSION … retained`, then `resumed: replaying N`. Every missed message appears exactly once. If the IP did not change, TCP may simply carry the old connection through the outage; the messages then arrive late but once, with no resume. |
 
-## 8. Streamlit demo client (optional)
+## 8. Browser demo client (optional)
 
-`tools/streamlit_app.py` is a browser chat UI for the live demo. It is a **skin over `pscp.client.PSCPClient`**: it opens normal PSCP connections, so the protocol package stays standard-library only. Streamlit itself needs Python 3.11+ even though `pscp/` supports 3.8+.
+`tools/webui.py` is a small standard-library bridge: it serves `tools/web/index.html` and holds one normal `PSCPClient` per username, because a browser cannot open a raw TCP socket. The page polls the bridge once per second. Nothing to install; `pscp/` stays standard-library only.
 
 ```bash
-pip install -r requirements-dev.txt          # streamlit==1.66.1
-python -m streamlit run tools/streamlit_app.py   # browser opens on http://localhost:8501
+python -m pscp.broker --host 127.0.0.1 --db data/broker.db
+python tools/webui.py                # http://127.0.0.1:8080
 ```
 
-Use `python -m streamlit`, not bare `streamlit`: on Windows the Store version of Python installs `streamlit.exe` into a `LocalCache\...\Scripts` folder that is not on `PATH`.
+Rooms come from the broker's `ROOMS`/`ROOMSACK` directory. Message history and last-message previews are read from `data/broker.db`, which is git-ignored. `--db ''` runs the broker without a database: the room list still works, previews and history do not.
 
-- Sidebar: broker host/port, username, Connect/Disconnect, room join/leave, QoS 0/1, Ping (RTT). Main area: chat history, online users, protocol log.
-- With three hosts: Host 1 runs the broker, Laptop A runs Streamlit (browser on the same laptop, port 8501 stays local), Laptop B runs `python -m pscp.client`. Both are clients, so only the broker needs TCP 5050 open.
-- Do not expose port 8501: Streamlit has no authentication of its own.
-- **Take over an existing session (RESUME)** clears a session left behind by a browser refresh. Without it the old socket keeps the username and the broker answers `USERNAME_TAKEN`.
-- One Streamlit process keeps at most one client per username. Connecting with a username that is already live in the same process disconnects the older client instead of looping, and the older tab shows "this session was taken over by another client".
-- Use the Disconnect button before refreshing the page; a refresh alone leaves the old session to time out after 120 s.
+- Layout: rooms on the left (preview, time, unread dot), chat on the right. Enter sends.
+- The gear icon next to the new-room box opens broker info and **Test RTT**: one PING/PONG round trip, shown in milliseconds.
+- One bridge holds one client per username. Refreshing the page reconnects automatically; **Leave** disconnects cleanly.
+- The bridge binds `127.0.0.1`, so a browser on Laptop A talks to Laptop A. Host 1 runs the broker, Laptop B can run `python -m pscp.client`; only TCP 5050 leaves a laptop.
+- Do not expose port 8080: the bridge has no authentication.
+- Tailwind CSS is loaded from its CDN, so the page needs internet on first load. Offline it still works, just unstyled.
