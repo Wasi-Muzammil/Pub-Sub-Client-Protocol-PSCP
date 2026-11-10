@@ -116,6 +116,8 @@ PUBACK carries the room name in **both** directions. A sequence number is unique
 - Both sides set **TCP_NODELAY**, so small chat messages are not delayed by Nagle's algorithm.
 - TCP is a byte stream, so a receiver must read exactly 8 header bytes, then exactly TopicLen + PayloadLen more bytes (`recv_exact`).
 
+**Application conventions are not part of PSCP.** The web client shares user profiles as JSON text in ordinary PUBLISH messages on a room called `_profiles` (see [WEBCLIENT.md](WEBCLIENT.md)). The broker treats it like any other room. A different PSCP client may ignore this convention and still be fully compatible.
+
 ## 9. Differences from MQTT v3.1.1 (for originality)
 
 | PSCP | MQTT v3.1.1 |

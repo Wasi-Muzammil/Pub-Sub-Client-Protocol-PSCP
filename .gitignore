@@ -6,3 +6,4 @@ venv/
 report/*.aux
 report/*.out
 report/*.toc
+report/

@@ -36,7 +36,7 @@ class NotConnected(Exception):
 class PSCPClient:
     def __init__(self, host, username, port=DEFAULT_PORT, *, qos=1, keepalive=KEEPALIVE,
                  drop_ack=0.0, reconnect=True, backoff=BACKOFF, logger=None,
-                 on_message=None, on_presence=None, on_status=None):
+                 on_message=None, on_presence=None, on_status=None, on_ack=None):
         self.host, self.port, self.username = host, port, username
         self.qos = qos
         self.keepalive = keepalive
@@ -47,6 +47,7 @@ class PSCPClient:
         self.on_message = on_message or (lambda room, sender, text, seq: None)
         self.on_presence = on_presence or (lambda event, user: None)
         self.on_status = on_status or (lambda text: None)
+        self.on_ack = on_ack or (lambda msg_id, room, status: None)  # PUBACK for our own publish
 
         self.subscriptions = {}  # room -> QoS, re-sent after a non-resumed reconnect
         self.connected = threading.Event()
@@ -56,7 +57,9 @@ class PSCPClient:
         self._outbox = Outbox()
         self._dedup = {}  # topic -> DedupWindow over broker sequence numbers
         self._waiters = {}  # msg_id -> [Event, reply Message]
-        self._pong = threading.Event()
+        # PINGs in flight (keep-alive and manual share PONGs, so ping() times only its own)
+        self._pongs = threading.Condition()
+        self._pings_out = 0
         self._ping_lock = threading.Lock()
         self._id_lock = threading.Lock()
         self._last_id = 0
@@ -110,12 +113,27 @@ class PSCPClient:
     def ping(self, timeout=10.0):
         """Round-trip time of one PING/PONG in seconds."""
         with self._ping_lock:
-            self._pong.clear()
+            with self._pongs:
+                # let an earlier keep-alive PING get its PONG first, or its PONG would end our timing early
+                if not self._pongs.wait_for(lambda: self._pings_out == 0, min(timeout, 2.0)):
+                    self._pings_out = 0  # its PONG was lost with an old connection
             t0 = time.perf_counter()
-            self._send(Message(MsgType.PING))
-            if not self._pong.wait(timeout):
-                raise TimeoutError("no PONG")
+            self._send_ping()
+            with self._pongs:
+                if not self._pongs.wait_for(lambda: self._pings_out == 0, timeout):
+                    self._pings_out = 0
+                    raise TimeoutError("no PONG")
             return time.perf_counter() - t0
+
+    def _send_ping(self):
+        with self._pongs:
+            self._pings_out += 1
+        try:
+            self._send(Message(MsgType.PING))
+        except BaseException:
+            with self._pongs:
+                self._pings_out = max(0, self._pings_out - 1)
+            raise
 
     def pending_count(self):
         return len(self._outbox)
@@ -164,6 +182,8 @@ class PSCPClient:
         with self._state_lock:
             self._sock = sock
             self._last_rx = self._last_tx = time.monotonic()
+        with self._pongs:
+            self._pings_out = 0  # PONGs owed on the old connection will never come
         threading.Thread(target=self._receiver, args=(sock,), name="client-recv", daemon=True).start()
         self.connected.set()
 
@@ -258,13 +278,16 @@ class PSCPClient:
                 self.on_presence(event, user)
         elif t == MsgType.PUBACK:
             self._outbox.ack(msg.msg_id)
+            self.on_ack(msg.msg_id, msg.topic, msg.status())
             if msg.status() != Status.OK:
                 self.on_status(f"publish to {msg.topic} rejected: {msg.status().name}")
             self._resolve(msg)
         elif t in (MsgType.SUBACK, MsgType.UNSUBACK):
             self._resolve(msg)
         elif t == MsgType.PONG:
-            self._pong.set()
+            with self._pongs:
+                self._pings_out = max(0, self._pings_out - 1)
+                self._pongs.notify_all()
         elif t == MsgType.ERROR:
             self.on_status(f"broker error {msg.status().name}" + (f" ({msg.topic})" if msg.topic else ""))
         else:
@@ -287,9 +310,13 @@ class PSCPClient:
                 continue
             now = time.monotonic()
             try:
-                if now - last_ping >= self.keepalive:
-                    last_ping = now
-                    self._send(Message(MsgType.PING))
+                # skipped while a manual ping() runs: its own PINGs already keep the link alive
+                if now - last_ping >= self.keepalive and self._ping_lock.acquire(blocking=False):
+                    try:
+                        last_ping = now
+                        self._send_ping()
+                    finally:
+                        self._ping_lock.release()
                 if now - self._last_rx > limit:
                     self._drop_link(f"broker silent for {limit:g}s")
                     continue

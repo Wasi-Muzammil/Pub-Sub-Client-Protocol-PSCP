@@ -1,6 +1,8 @@
 # Handoff: CS-327 CCN CEP, PSCP Multi-Client Chat
 
-_Last updated: 23 October 2026 (rev. 2: QoS 1 on both hops, session resume, cloud broker, code written)_
+_Last updated: 10 November 2026 (rev. 3: WhatsApp-style Streamlit web client with local SQLite; broker in Docker on Oracle Cloud)_
+
+_Rev. 2 (23 October 2026): QoS 1 on both hops, session resume, cloud broker, code written._
 
 ## 1. Project at a glance
 
@@ -10,12 +12,12 @@ _Last updated: 23 October 2026 (rev. 2: QoS 1 on both hops, session resume, clou
 | Project title | Design, Implementation and Evaluation of a Multi-Host Networked Application |
 | Option chosen | **D: Multi-client chat with presence** |
 | Our protocol | **PSCP** (Publish/Subscribe Chat Protocol). Inspired by MQTT but our own design |
-| Language | Python 3.8+, raw `socket` API, standard library only (`matplotlib` only for the graphs) |
+| Language | Python 3.8+, raw `socket` API. The protocol and broker use only the standard library. The web client uses Streamlit + SQLite; `matplotlib` is used for the graphs |
 | Group | 2 members so far (names and roll numbers are still placeholders) |
 | Proposal | **Done**: one-page version, LaTeX + editable doc |
 | Final report | **Template done**. Measurements, screenshots and results are placeholders. **Section 2 must be updated to rev. 2** (see §4) |
-| Code | **Done and tested locally.** Broker, client, CLI, experiments; 25 tests pass |
-| Deployment / measurements | **Not started.** The scripts are ready (`deploy/`, `experiments/`) |
+| Code | **Done and tested locally.** Broker, client library, terminal CLI, **Streamlit web client (rev. 3)**, experiments; 32 tests pass |
+| Deployment / measurements | **Not started.** `Dockerfile`, `docker-compose.yml`, `deploy/oracle_setup.sh` and `experiments/` are ready. The Docker image has **not yet been built or run** (no Docker on the dev laptop) |
 
 ## 2. What the brief requires (summary)
 
@@ -56,6 +58,15 @@ _Last updated: 23 October 2026 (rev. 2: QoS 1 on both hops, session resume, clou
 - **New (rev. 2): QoS 1 applies on both hops** (publisher → broker and broker → subscriber), so the chat is reliable. Duplicates are removed with Message IDs: the client's ID at the broker, and (room, sequence number) at the client.
 - **New (rev. 2): session retention + RESUME.** TCP already loses nothing while a connection is up; messages are really lost when the connection breaks. So the broker keeps a disconnected client's session for 120 s and replays its unacknowledged messages when it reconnects with RESUME.
 - **New (rev. 2): the broker runs on a cloud VM** (Host 1), and the two clients are laptops or a VM (Hosts 2 and 3). An optional comparison condition is a broker on a LAN laptop.
+- **New (rev. 3): Docker on an Oracle Cloud VM** replaces systemd.
+  - The broker runs with `network_mode: host`, so the logs show real client IPs and there is no Docker NAT to explain.
+  - `restart: unless-stopped`.
+  - Logs are read over SSH with `docker compose logs -f broker`.
+- **New (rev. 3): WhatsApp-style Streamlit web client** (`webclient/`), run by each user on their own laptop.
+  - Rooms are shown as groups.
+  - The profile, joined rooms, chat history and contacts live in a **local SQLite file per user** (`~/.pscp/<user>.sqlite3`), because PSCP deliberately stores nothing.
+  - v1 features: online presence, message ticks (🕓 / ✓ PUBACK / ✓✓ own copy returned through the room), and an offline outbox.
+- **New (rev. 3): profiles are shared** through an **application convention**: JSON on a hidden room `_profiles`, with a `who` request so people who join late learn everyone's profile. **It is not part of the protocol.** The broker treats `_profiles` like any other room.
 - **TCP_NODELAY** is set on both sides, so small messages are not held back by Nagle's algorithm (this matters for the latency results).
 - **Report in LaTeX** (pdfLaTeX / Overleaf).
 
@@ -106,12 +117,14 @@ _Last updated: 23 October 2026 (rev. 2: QoS 1 on both hops, session resume, clou
 - Worked example (15 bytes, unchanged and covered by a unit test): `01 07 01 05 00 01 00 02 | 72 6F 6F 6D 31 | 48 69` = QoS 1 PUBLISH of "Hi" to "room1", ID 1.
 - **Report note:** a PUBACK means the next hop has the message, not that the other user has read it. Read receipts are out of scope.
 
-## 5. File structure (rev. 2)
+## 5. File structure (rev. 3)
 
 ```
 Pub_Sub_Client_Protocol/
 ├── README.md                 quick start, test command, layout
-├── requirements-dev.txt      matplotlib, pytest (the runtime needs nothing)
+├── requirements.txt          streamlit (web client), matplotlib, pytest; the broker needs nothing
+├── Dockerfile                broker image: python:3.12-slim + pscp/ only, non-root, multi-arch
+├── docker-compose.yml        service `broker`: host networking, restart unless-stopped, log rotation
 ├── pscp/                     the protocol package; the only code deployed to the VM
 │   ├── constants.py          types, status codes, flags, timers, limits
 │   ├── wire.py               Message, encode/decode, recv_exact, read_message, payload helpers
@@ -126,18 +139,25 @@ Pub_Sub_Client_Protocol/
 │   │   └── rooms.py          room → subscribers, per-room lock and sequence number
 │   └── client/
 │       ├── __main__.py       python -m pscp.client --host <ip> --user <name> [--qos --drop-ack --log-file]
-│       ├── api.py            PSCPClient: used by both the CLI and measure.py
+│       ├── api.py            PSCPClient: used by the CLI, the web client and measure.py (rev. 3: on_ack callback)
 │       ├── connection.py     TCP connect with back-off
 │       └── cli.py            chat commands: /join /leave /msg /qos /who /rooms /ping /quit
+├── webclient/                WhatsApp-style Streamlit client (rev. 3)
+│   ├── app.py                streamlit run webclient/app.py: profile picker, chat list, chat view
+│   ├── service.py            ChatService: long-lived PSCPClient → SQLite, outbox, ticks, profile protocol
+│   ├── store.py              SQLite: profile, rooms, messages, contacts, room_members
+│   ├── profiles.py           `_profiles` JSON convention, validation, avatar resizing
+│   └── ui.py                 WhatsApp CSS + HTML (all user text escaped)
 ├── experiments/
 │   ├── measure.py            rtt | latency | throughput | op (persistent/new) | resume → results/raw/*.csv
 │   ├── plot.py               CSV → mean ± std tables + error-bar figures in report/figures/
 │   └── bytes_compare.py      PSCP vs JSON, QoS 0 vs 1, persistent vs new connection, yearly GB/kWh
-├── tests/                    test_wire, test_reliability, test_rooms, test_integration (25 tests)
-├── deploy/                   setup_vm.sh, pscp-broker.service (systemd), capture.sh (tcpdump)
+├── tests/                    test_wire, test_reliability, test_rooms, test_integration, test_webclient (32 tests)
+├── deploy/                   oracle_setup.sh (Docker + iptables + compose up), capture.sh (tcpdump)
 ├── docs/
 │   ├── PROTOCOL.md           authoritative spec (R1)
-│   ├── DEPLOYMENT.md         VM setup, R3/R5/R6/R7 step-by-step
+│   ├── DEPLOYMENT.md         Oracle Cloud + Docker setup, R3/R5/R6/R7 step-by-step
+│   ├── WEBCLIENT.md          web client: run, features, SQLite tables, profile convention, limitations
 │   └── handoff.md            this file
 ├── results/                  raw/ (CSV), logs/ (failure evidence), captures/ (pcapng)
 └── report/                   CEP_Report.tex (to be copied in), figures/
@@ -148,13 +168,14 @@ Compared with the first plan:
 - The broker separates **Session** (survives a disconnect) from **Connection** (one socket); this split is what makes resume work.
 - The client's receiver and keep-alive code live inside `api.py` rather than in separate files.
 - The failure scenarios are documented as steps in `DEPLOYMENT.md` §7 rather than as scripts.
+- Rev. 3 removed `deploy/setup_vm.sh` and `deploy/pscp-broker.service`; Docker replaces them.
 
 ## 6. Planned deployment and tests
 
 - **Hosts:**
-  - Host 1 = **broker on a cloud VM** (Ubuntu, systemd service, port 5050 open in the security group).
-  - Host 2 = Client A (Member 2's laptop).
-  - Host 3 = Client B (a second laptop, a VirtualBox VM in bridged mode, or a lab PC).
+  - Host 1 = **broker in Docker on an Oracle Cloud VM** (Ubuntu). TCP 5050 must be open in the VCN security list **and** in the VM's iptables.
+  - Host 2 = Client A: the Streamlit web client on Member 2's laptop.
+  - Host 3 = Client B: the web client on a second laptop, a VirtualBox VM in bridged mode, or a lab PC.
 - **R3 evidence:**
   - On the VM, `ip addr` shows a **private** IP, while the public IP is 1:1 NAT'd by the cloud. Include both and explain the mapping.
   - Include `ipconfig` output from each laptop.
@@ -191,16 +212,20 @@ Compared with the first plan:
 - [ ] Fill in member names, roll numbers and group number (proposal, report header, contributions table).
 - [ ] A 3rd or 4th member may join; update the work split if so.
 - [ ] **Page-limit risk:** the body already reaches about 10 pages with placeholders, and rev. 2 adds material. Move 2.7 (the receive-action table) and 2.8 (the worked example) to an appendix. Keep failure scenarios 1 and 4 in the body and move 2 and 3 to an appendix if needed.
-- [ ] Choose a cloud provider and create the VM (free tier). Keep port 5050 limited to the group's IPs, because PSCP has no authentication or encryption. **Mention this in the R4 security discussion,** including that RESUME takeover could be abused without authentication.
+- [ ] Create the **Oracle Cloud** VM (free tier) and run `deploy/oracle_setup.sh`. **This is the first time the Docker image will be built, so check `docker compose logs` shows START.** Keep port 5050 limited to the group's IPs, because PSCP has no authentication or encryption. **Mention this in the R4 security discussion,** including that RESUME takeover could be abused without authentication.
+- [ ] **Report: describe the web client and its local SQLite store,** and say clearly that the `_profiles` JSON convention is an application layer on top of PSCP, not part of the protocol.
+  - Profile traffic adds a little to the byte totals (a `who` plus one profile, ≤ ~6 KB with a photo, per user per connection). Mention it in the sustainability paragraph.
+  - The ticks are a good demo of QoS 1: 🕓 waiting → ✓ PUBACK → ✓✓ own copy returned through the room.
+- [ ] Web-client limitation to state: a message sent while a user's app has been closed for more than 120 s is lost. The broker keeps no history, by design.
 - [ ] Draw `docs/network_diagram.drawio` and export it to `report/figures/`.
 - [ ] Copy `CEP_Report.tex` into `report/`.
-- [ ] Write the AI-declaration appendix honestly. Claude was used for reading the brief, the proposal, the report structure, the LaTeX template, the draft protocol spec, the rev. 2 protocol design, and **writing the code, tests, experiment scripts and deployment files**. Every member must understand the code well enough to explain it at the demo.
+- [ ] Write the AI-declaration appendix honestly. Claude was used for reading the brief, the proposal, the report structure, the LaTeX template, the draft protocol spec, the rev. 2 protocol design, and **writing the code, tests, experiment scripts and deployment files, plus (rev. 3) the Streamlit web client, the SQLite store and the Docker setup**. Every member must understand the code well enough to explain it at the demo.
 
 ## 8. Next steps (suggested order)
 
 1. ~~Submit the proposal~~ (Week 09) and get Option D confirmed.
 2. ~~Write `pscp/`, the tests and the experiments~~ (done). Every member reads `docs/PROTOCOL.md` and the code, and runs `python -m unittest discover -s tests -t .` once.
-3. Create the cloud VM and run `sudo bash deploy/setup_vm.sh`. Smoke-test from both laptops (`docs/DEPLOYMENT.md` §1–3).
+3. Create the Oracle VM, add the VCN ingress rule for 5050, and run `sudo bash deploy/oracle_setup.sh`. On both laptops, run `pip install -r requirements.txt && streamlit run webclient/app.py` and chat through the VM's public IP (`docs/DEPLOYMENT.md` §1–3, `docs/WEBCLIENT.md`).
 4. Record `ip addr` / `ipconfig` and the public IP; draw the network diagram.
 5. Make a Wireshark capture of one QoS 1 exchange on both hops, plus one DUP retransmission, and annotate it.
 6. Run `experiments/measure.py` for every condition (5 runs each), then `plot.py` and `bytes_compare.py`.

@@ -1,0 +1,7 @@
+# Read by `streamlit run` when started from the repo root.
+[client]
+# hide the "Deploy" button; the ⋮ menu (rerun, settings) stays
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

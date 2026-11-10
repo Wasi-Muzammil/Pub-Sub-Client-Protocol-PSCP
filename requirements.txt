@@ -1,0 +1,9 @@
+# The broker and the terminal client need only the Python 3.8+ standard library
+# (the Docker image installs nothing from this file).
+
+# Web client (webclient/app.py)
+streamlit>=1.37
+
+# experiments/plot.py and optional pytest runs
+matplotlib>=3.7
+pytest>=7

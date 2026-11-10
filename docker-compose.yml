@@ -1,0 +1,21 @@
+# PSCP broker on the cloud VM.
+#   docker compose up -d --build      start / rebuild after `git pull`
+#   docker compose logs -f broker     live protocol log (R7 evidence)
+#   docker exec -it pscp-broker sh    shell inside the container
+services:
+  broker:
+    build: .
+    image: pscp-broker
+    container_name: pscp-broker
+    # Host networking: the broker binds the VM's own interface, so logs show real client IPs,
+    # tcpdump on the VM sees the traffic directly, and there is no extra Docker NAT layer.
+    network_mode: host
+    restart: unless-stopped
+    command: ["--host", "0.0.0.0", "--port", "5050", "--log-level", "INFO"]
+    # fault injection for failure scenario 3, e.g.:
+    # command: ["--host", "0.0.0.0", "--port", "5050", "--drop-ack", "0.3"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
