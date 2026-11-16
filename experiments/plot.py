@@ -28,13 +28,18 @@ def load(raw_dir):
     return groups
 
 
+def per_run_means(runs):
+    """(cond, qos) -> [mean of run 1, mean of run 2, ...] in run order (the report's R1..R5 columns)."""
+    per = defaultdict(dict)
+    for (cond, qos, run), vals in runs.items():
+        per[(cond, qos)][int(run)] = statistics.fmean(vals)
+    return {k: [v[r] for r in sorted(v)] for k, v in sorted(per.items())}
+
+
 def summarise(runs):
     """(cond, qos) -> (mean, std, n_runs) over per-run means."""
-    per = defaultdict(list)
-    for (cond, qos, _run), vals in runs.items():
-        per[(cond, qos)].append(statistics.fmean(vals))
     return {k: (statistics.fmean(v), statistics.stdev(v) if len(v) > 1 else 0.0, len(v))
-            for k, v in sorted(per.items())}
+            for k, v in per_run_means(runs).items()}
 
 
 def plot(exp, unit, stats, out_dir):
@@ -84,9 +89,10 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     for (exp, unit), runs in sorted(load(a.raw).items()):
         stats = summarise(runs)
-        print(f"\n### {exp} ({unit})\n\n| condition | QoS | runs | mean | std |\n|---|---|---|---|---|")
+        each = per_run_means(runs)
+        print(f"\n### {exp} ({unit})\n\n| condition | QoS | per-run means (R1, R2, ...) | mean | std |\n|---|---|---|---|---|")
         for (cond, qos), (m, s, n) in stats.items():
-            print(f"| {cond} | {qos} | {n} | {m:.3f} | {s:.3f} |")
+            print(f"| {cond} | {qos} | {', '.join(f'{x:.2f}' for x in each[(cond, qos)])} | {m:.3f} | {s:.3f} |")
         print(f"\nfigure: {plot(exp, unit, stats, a.out)}")
 
 

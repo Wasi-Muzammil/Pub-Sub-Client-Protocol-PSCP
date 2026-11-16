@@ -2,3 +2,5 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 *.yml text eol=lf
+/tmpB
+tmpB

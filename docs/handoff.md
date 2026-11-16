@@ -207,7 +207,10 @@ Compared with the first plan:
 
 ## 7. Open items and risks
 
-- [ ] **Update report §2** to rev. 2: copy it from `docs/PROTOCOL.md`, including the new SESSION flag, the payload formats, two-hop QoS 1 and resume.
+- [x] **Update report §2.** Done in rev. 4 (16 November 2026): `report/CEP_Report.tex` was recreated from the old PDF with every section brought in line with the code (Oracle/Docker deployment, two-hop QoS 1, RESUME, web client, honest AI declaration).
+  - What remains is real data: measurements, captures, screenshots and names. `report/FILL_GUIDE.md` maps each placeholder to its command.
+  - Note that `report/` is in `.gitignore`.
+- [ ] Install `tools/pscp.lua` (Wireshark PSCP dissector, tested with tshark) before making the R5 capture.
 - [ ] **Proposal may be missing required items.** The brief asks for the plan for three hosts and the division of work. Consider adding one sentence for each back in.
 - [ ] Fill in member names, roll numbers and group number (proposal, report header, contributions table).
 - [ ] A 3rd or 4th member may join; update the work split if so.

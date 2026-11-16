@@ -51,6 +51,7 @@ The container restarts automatically after a crash or a VM reboot (`restart: unl
 - Export the network diagram (`docs/network_diagram.drawio`) to `report/figures/`.
 
 ## 5. Wireshark (R5)
+- **Decode PSCP by name:** copy `tools/pscp.lua` to `%APPDATA%\Wireshark\plugins\` (Linux: `~/.local/lib/wireshark/plugins/`) and restart Wireshark. You can then filter with `pscp`, `pscp.type == 7` or `pscp.flags.dup == 1`. The step-by-step annotation guide is `report/FILL_GUIDE.md` §2.
 - **On a laptop:** capture on the Wi-Fi interface with the filter `tcp.port == 5050`. Send one chat message, select the PUBLISH frame and annotate it: Ethernet → IP (laptop → VM public IP) → TCP (ephemeral port → 5050) → PSCP bytes.
 - **On the VM:** run `sudo bash deploy/capture.sh 60`, then copy the `.pcapng` back with `scp`. This capture shows the VM's private IP, which is more evidence of the NAT.
 - **QoS 1 on both hops:** set `--drop-ack 0.3` to capture a DUP=1 retransmission.
