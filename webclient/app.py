@@ -110,9 +110,14 @@ def profile_dialog(svc):
         about = st.text_input("About", value=p["about"], max_chars=profiles.MAX_ABOUT)
         avatar = avatar_inputs("edit", p["avatar"])
         host = st.text_input("Broker host / IP", value=p["broker_host"],
-                             help="Takes effect after 'Switch profile' and signing in again")
+                             help="Saving reconnects to the new broker; queued messages are kept")
         if st.form_submit_button("Save", type="primary", use_container_width=True):
+            old = (p["broker_host"], int(p["broker_port"] or DEFAULT_PORT))
             svc.update_profile(display.strip() or p["username"], about.strip(), avatar(), broker_host=host.strip())
+            new = (svc.profile["broker_host"], int(svc.profile["broker_port"] or DEFAULT_PORT))
+            if new != old:
+                svc.stop()
+                get_service.clear()
             st.rerun()  # closes the dialog
     if st.button("↩️ Switch profile", use_container_width=True):
         svc.stop()
@@ -178,7 +183,7 @@ def sidebar(svc):
     chat_list(svc)
 
 
-@st.fragment(run_every="2s")
+@st.fragment(run_every=2)
 def chat_list(svc):
     contacts = svc.store.contacts()
     rooms = svc.store.rooms()
@@ -195,7 +200,7 @@ def chat_list(svc):
             st.rerun()
 
 
-@st.fragment(run_every="1s")
+@st.fragment(run_every=1)
 def chat_view(svc, room):
     contacts = svc.store.contacts()
     with st.container(key="wa_card"):  # header + messages as one card (styled via .st-key-wa_card)
